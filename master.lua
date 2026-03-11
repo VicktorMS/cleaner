@@ -39,9 +39,12 @@ local STRIP_WIDTH = 4
 local PROTOCOL = "area_clear"
 local MODEM_SIDE = "top" -- lado do modem no computador
 
+local TURTLE_TIMEOUT = 120 -- segundos sem resposta antes de redistribuir faixa
+
 ---------- ESTADO ----------
 local strips = {}       -- faixas de trabalho pendentes
 local active = {}       -- {turtle_id = strip}
+local last_seen = {}    -- {turtle_id = os.clock()} ultimo contato
 local completed = {}    -- faixas concluidas
 local turtle_names = {} -- {id = label}
 
@@ -97,9 +100,26 @@ local function showStatus()
   print("Aguardando mensagens...")
 end
 
+-- Verifica turtles que nao respondem e redistribui faixas
+local function checkTimeouts()
+  local now = os.clock()
+  for id, strip in pairs(active) do
+    if last_seen[id] and (now - last_seen[id]) > TURTLE_TIMEOUT then
+      local name = turtle_names[id] or ("Turtle #" .. id)
+      print("[" .. name .. "] TIMEOUT! Faixa #" .. strip.id .. " redistribuida")
+      table.insert(strips, 1, strip)
+      active[id] = nil
+      last_seen[id] = nil
+    end
+  end
+end
+
 -- Processa mensagens das turtles
 local function handleMessage(sender_id, msg)
   if type(msg) ~= "table" then return end
+
+  -- Atualiza ultimo contato
+  last_seen[sender_id] = os.clock()
 
   if msg.type == "register" then
     -- Turtle se registrando
@@ -191,6 +211,9 @@ while true do
   if sender then
     handleMessage(sender, msg)
   end
+
+  -- Verifica turtles que nao respondem
+  checkTimeouts()
 
   -- Verifica se tudo foi concluido
   local total_strips_count = 0
